@@ -1,4 +1,4 @@
-# Predicting_Incomes_From_1994
+# Predicting Incomes From 1994
 In this project, a sample of the US population, originally from the 1994 Census, was taken and analyzed in an effort to generate an algorithm that could accurately predict whether an individual made over \$50,000 or not. The variables that were used to predict income include but are not limited to age, race, sex, education, occupation, hours per week, and marital status.
 
 Before generating numerous algorithms, an exploration of the dataset was conducted to identify patterns that could be useful when predicting income. We identified groups that were most likely to make over \$50,000 based on the data.
