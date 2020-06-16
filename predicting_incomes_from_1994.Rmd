@@ -1,0 +1,813 @@
+---
+title: "Predicting Incomes From 1994"
+author: "Justin Farnsworth"
+date: "6/15/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# Summary
+In this project, a sample of the US population, originally from the 1994 Census, was taken and analyzed in an effort to generate an algorithm that could accurately predict whether an individual made over \$50,000 or not. The variables that were used to predict income include but are not limited to age, race, sex, education, occupation, hours per week, and marital status.
+
+Before generating numerous algorithms, an exploration of the dataset was conducted to identify patterns that could be useful when predicting income. We identified groups that were most likely to make over \$50,000 based on the data.
+
+A total of seven machine learning algorithms were used to predict income. Five of the models were supervised learning models, one was unsupervised, and the final model was an ensemble of the five supervised learning models. It was determined that the **random forest** model performed the best, with an **accuracy of 85.98%**. The ensemble also did comparatively well as it had an accuracy of 83.97%. Across all models, they were all capable of correctly predicting those who make \$50,000 or less most of the time. However, they all struggled with correctly predicting those who made more than \$50,000.
+
+Each section has their methods and models explained, followed by their respective results. 
+
+The dataset can be accessed here:
+<https://www.kaggle.com/uciml/adult-census-income/data>
+
+A copy of the dataset is also present in the project's GitHub repository:
+<https://github.com/farnswj1/Predicting_Incomes_From_1994.git>
+
+
+# Analysis
+An exploration of the dataset was conducted to identify patterns/relationships in the dataset.
+```{r load_dataset, message = FALSE}
+# Required packages
+if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
+if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
+if(!require(gghighlight)) install.packages("gghighlight", repos = "http://cran.us.r-project.org")
+if(!require(gam)) install.packages("gam", repos = "http://cran.us.r-project.org")
+if(!require(tinytex)) install.packages("tinytex", repos = "http://cran.us.r-project.org")
+
+
+# Create a temporary file and load the dataset into it
+# NOTE: The CSV is already on this project's GitHub repo.
+# Original Source: https://www.kaggle.com/uciml/adult-census-income/data
+datafile = tempfile()
+download.file(
+  "https://raw.github.com/farnswj1/Predicting_Incomes_From_1994/master/adult.csv", 
+  datafile
+)
+
+# Read the data from the file
+data <- read.csv(datafile)
+
+# Delete the temporary file
+rm(datafile)
+```
+
+## Exploring the Dataset - Overview
+After loading the dataset, we saw that there are `r nrow(data)` rows (each row represented a person) and `r ncol(data)` columns. Here are the first 10 rows of the dataset:
+```{r show_data_head}
+# Show the first 10 rows of the dataset
+head(data, 10)
+```
+
+We see that there are missing values for some of the rows, which are represented as `?`. However, let's check to see if there are any null values.
+```{r check_for_null_values}
+# Check if any values in the table are null
+any(is.na(data))
+```
+
+It seems that the dataset is fairly clean despite some unknown values. Now, let's check to see what the datatypes are for each column.
+```{r show_column_datatypes}
+# Show column names and their datatypes
+data.frame(
+  column_names = colnames(data),
+  data_type = map_chr(colnames(data), function(colname) {class(data[,colname])})
+)
+```
+
+
+## Exploring the Dataset - Age
+Let's identify the range of ages that the dataset consists of.
+```{r show_age_range}
+# Find the range of age values in the dataset
+range(data$age)
+```
+
+Given the wide range of ages, it might be more helpful to visualize the prevalance of each age group in the dataset. The following graph shows the total number of people for each age group.
+```{r plot_age_count, message = FALSE}
+# Calculate the number of people and 
+# the percentage of people who made >$50k for each age
+data_age_groups <- data %>% 
+  group_by(age) %>% 
+  summarize(total = n(), percentage = mean(income == ">50K") * 100)
+
+# Plot the number of people in the dataset by age.
+data_age_groups %>% 
+  ggplot(aes(age, total)) + 
+  geom_bar(stat = "identity") + 
+  ggtitle("Number of Adults by Age") + 
+  xlab("Age") + 
+  ylab("Total") + 
+  scale_x_continuous(labels = seq(20, 90, 10), breaks = seq(20, 90, 10)) + 
+  scale_y_continuous(labels = seq(0, 1000, 200), breaks = seq(0, 1000, 200))
+```
+
+As expected, the most prevalent age groups in the dataset are younger. It appears to peak in the mid-30s, then it declines afterwards. However, let's identify the percentage of people who made over \$50,000 for each age group.
+```{r plot_age_percentages, message = FALSE}
+# Plot the percentage of people what made over $50k by age
+data_age_groups %>%
+  ggplot(aes(age, percentage)) + 
+  geom_bar(stat = "identity") + 
+  ggtitle("Percentage of Adults That Made Over $50,000 by Age") + 
+  xlab("Age") + 
+  ylab("Percentage") +
+  scale_x_continuous(labels = seq(20, 90, 10), breaks = seq(20, 90, 10))
+```
+
+Interestingly, those that were about 50 years old were most likely to make over $50,000. We also see that there is a high percentage for specific age groups over 75. However, the prevalence of those over 75 years old isn't as high.
+```{r show_age_75_and_over, message = FALSE}
+# Show the number of adults in the dataset that are over 75 by age
+data_age_groups %>% 
+  group_by(age) %>% 
+  filter(age > 75) %>% 
+  select(total)
+```
+
+
+## Exploring the Dataset - Work Class
+Here are the different work classes in the dataset:
+```{r show_workclasses}
+# Show the different types of work classes
+unique(data$workclass)
+```
+
+As mentioned previously, we see the `?` is listed as one of the values. However, let's look at the total number of people for each work class in the dataset as well as their percentages:
+```{r show_workclass_count_percentage}
+# Show the percentages and total number of people
+data_work_classes <- data %>% 
+  group_by(workclass) %>% 
+  summarize(total = n(), percentage = mean(income == ">50K") * 100) %>% 
+  arrange(desc(percentage))
+
+data_work_classes
+```
+
+Unsurprisingly, those who never worked or aren't getting paid are not going to have high percentages. They were not receiving income and so they were almost certainly not going to earn over \$50,000.
+
+We also see that the private work class made up the majority of people in the dataset. To visualize the prevalence of the work class, the following graph shows the total number of people in each work class:
+```{r plot_workclass_count, message = FALSE}
+# Plot the total number of people from each work class
+data_work_classes %>% 
+  mutate(workclass = reorder(workclass, total)) %>% 
+  ggplot(aes(workclass, total)) + 
+  geom_bar(stat = "identity") + 
+  ggtitle("Number of People by Work Class") + 
+  xlab("Work Class") + 
+  ylab("Total") + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+Let's show the percentage of people who made over \$50,000 for each work class:
+```{r plot_workclass_percentage, message = FALSE}
+# Plot the percentage of people what made over $50k by work class
+data_work_classes %>% 
+  mutate(workclass = reorder(workclass, percentage)) %>% 
+  ggplot(aes(workclass, percentage)) + 
+  geom_bar(stat = "identity") + 
+  ggtitle("Percentage of Adults That Made Over $50,000 by Work Class") +  
+  xlab("Work Class") + 
+  ylab("Percentage") + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
+  scale_y_continuous(labels = seq(0, 60, 10), breaks = seq(0, 60, 10))
+```
+
+We see that the private work class didn't have the highest percentage despite the high prevlance. Instead, it appears that those who were classified as part of the public sector or self-employed incorporated had the highest percentages. Particularly, the self-employed incorporated work class were twice as more likely than the private work class to make over than \$50,000.
+
+
+## Exploring the Dataset - Education
+Let's have a look at the different levels of education in the dataset:
+```{r show_education_count_percentage}
+# Show the different levels of education along with the totals and percentages
+data_education <- data %>% 
+  select(education, education.num, income) %>% 
+  group_by(education.num, education) %>% 
+  summarize(total = n(), percentage = mean(income == ">50K") * 100) %>% 
+  arrange(desc(education.num)) %>% 
+  ungroup()
+
+data_education
+```
+
+It is expected that those who have a higher level of education tend to have a better chance of making more money. Despite the wide range of levels of education, we see that the most common level of education is a high school graduate. A visualization of the total number of people for each level of education is shown as follows:
+```{r plot_education_count, message = FALSE}
+# Plot the number of people for each level of education
+data_education %>% 
+  mutate(education = reorder(education, education.num)) %>% 
+  ggplot(aes(education, total)) + 
+  geom_bar(stat = "identity") + 
+  ggtitle("Number of People by Level of Education") + 
+  xlab("Level of Education") + 
+  ylab("Total") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+However, the percentages are visualized in the following:
+```{r plot_education_percentage, message = FALSE}
+# Plot the percentage of people what made over $50k by level of education
+data_education %>% 
+  mutate(education = reorder(education, education.num)) %>% 
+  ggplot(aes(education, percentage)) + 
+  geom_bar(stat = "identity") + 
+  ggtitle("Percentage of Adults That Made Over $50,000 by Work Class") +  
+  xlab("Level of Education") + 
+  ylab("Percentage") + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
+  scale_y_continuous(labels = seq(0, 80, 10), breaks = seq(0, 80, 10))
+```
+
+
+## Exploring the Dataset - Marital & Relatiionship Status
+Let's show the total number of people in each category as well as the percentage of people who made over \$50,000 for each group:
+```{r show_marital_status_count_percentage}
+# Show the total number of people and the percentage of 
+# people that made over $50k by marital status
+data %>% 
+  group_by(marital.status) %>% 
+  summarize(total = n(), percentage = mean(income == ">50K") * 100) %>% 
+  arrange(desc(percentage))
+```
+
+The dataset suggests that those who were married had a significantly higher percentage than those that were not married. In fact, the percentage is 4 times higher than the next category, Divorced.
+
+Let's examine the relationship statuses next:
+```{r show_relationship_count_percentage}
+# Show the total number of people and the percentage of 
+# people that made over $50k by relationship status
+data %>% 
+  group_by(relationship) %>% 
+  summarize(total = n(), percentage = mean(income == ">50K") * 100) %>% 
+  arrange(desc(percentage))
+```
+
+This is consistent with the findings from the marital status column. Those that were married had a much higher probability of making over \$50,000.
+
+
+## Exploring the Dataset - Occupation
+Let's analyze the different occupational types.
+```{r show_occupation_count_percentage}
+# Show the number of people in each type of occupation along with the 
+# percentage of people who made over $50k for each occupation type.
+data_occupations <- data %>% 
+  group_by(occupation) %>% 
+  summarize(total = n(), percentage = mean(income == ">50K") * 100) %>% 
+  arrange(desc(percentage))
+
+data_occupations
+```
+
+The occupational type by percentage was executive management, which is also one of the most prevalent types in the dataset. The only occupational type that remained under 1% was private house services. A visualization of the table is shown as follows:
+```{r plot_occupation_percentage, message = FALSE}
+# Plot the percentage of people what made over $50k by level of education
+data_occupations %>% 
+  mutate(occupation = reorder(occupation, percentage)) %>% 
+  ggplot(aes(occupation, percentage)) + 
+  geom_bar(stat = "identity") + 
+  ggtitle("Percentage of Adults That Made Over $50,000 by Occupational Type") +  
+  xlab("Occupational Type") + 
+  ylab("Percentage") + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
+  scale_y_continuous(labels = seq(0, 80, 10), breaks = seq(0, 80, 10))
+```
+
+
+## Exploring the Dataset - Race & Sex
+The dataset also included information about the individual's race and sex. Let's analyze race first.
+
+Here are the total of number of people for each group as well as their percentages:
+```{r show_race_count_percentage}
+# Show the totals and percentages for each racial group
+data_races <- data %>% 
+  group_by(race) %>% 
+  summarize(total = n(), percentage = mean(income == ">50K") * 100) %>% 
+  arrange(desc(percentage))
+
+data_races
+```
+
+While the majority of the people in the dataset were white, those of Asian/Pacific Islander descent had the highest percentage. The dataset suggests that those that were white or Asian/Pacific Islander were twice as likely to make over \$50,000 than those that were black or American-Indian/Eskimo.
+
+Now let's analyze the sexes:
+```{r show_sex_count_percentage}
+# Show the totals and percentages for males and females
+data_sexes <- data %>% 
+  group_by(sex) %>% 
+  summarize(total = n(), percentage = mean(income == ">50K") * 100) %>% 
+  arrange(desc(percentage))
+
+data_sexes
+```
+
+We see that men had almost triple the likelihood of making more than \$50,000 when compared to women. However, the reason for this observation is not clearly explained by the dataset.
+
+Let's analyze the two features together:
+```{r show_race_and_sexes_count_percentage}
+# Show the totals and percentages by race and sex together
+data_races_and_sexes <- data %>% 
+  group_by(race, sex) %>% 
+  summarize(total = n(), percentage = mean(income == ">50K") * 100) %>% 
+  arrange(desc(percentage)) %>% 
+  ungroup()
+
+data_races_and_sexes
+```
+
+We can see that across all races, men had a higher probability of earning more than \$50,000 than women of the same race. It is also suggested by the data that some groups had a higher percentage than women of all racial groups. The only male group that didn't was those listed as Other.
+
+A plot of the table above is shown below:
+```{r plot_race_sex_percentage, message = FALSE}
+# Plot the percentages by race and sex
+data_races_and_sexes %>% 
+  mutate(race = reorder(race, percentage)) %>% 
+  ggplot(aes(race, percentage, fill = sex)) + 
+  geom_bar(stat = "identity", position = "dodge") + 
+  ggtitle("Percentage of Adults That Made Over $50,000 by Race and Sex") +  
+  xlab("Race") + 
+  ylab("Percentage") + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+NOTE: We do NOT encourage discrimination on the basis of race, sex, or any other immutable characteristic.
+
+
+## Exploring the Dataset - Capital
+The dataset provides two columns: capital gains and capital losses. We can use this information to calculate net capital gains, which is defined as:
+
+$$net\ capital\ gain = capital\ gain - capital\ loss$$
+We will also round the net capital gains for each row to the nearest thousand.
+```{r show_net_capital_gains_count_percentage}
+# Show the totals and percentages by net capital gains (rounded to the nearest 1000)
+data_net_capital_gains <- data %>%
+  mutate(net_capital_gain = round((capital.gain - capital.loss) / 1000) * 1000) %>% 
+  group_by(net_capital_gain) %>% 
+  summarize(total = n(), percentage = mean(income == ">50K") * 100) %>% 
+  arrange(desc(net_capital_gain))
+
+data_net_capital_gains %>% print(n = Inf)
+```
+
+Most people have a net capital gain of 0. In other words, most people in the dataset either made or lost some money through their capital or they didn't have financial assets in 1994.
+
+It is also no surprise that those who made over \$50,000 in net capital gains have a 100% probability of having an income listed as more than \$50,000. This is because they already earned more than \$50,000 in net capital gains alone.
+
+We also see a small number of people had a negative net capital gains. One user managed to make more than \$50,000 for the year despite losing nearly \$4,000! Also, most people who lost about \$2,000 - \$3,000 still made more than \$50,000 that year. 
+Here is the plot of the percentages by net capital gains:
+```{r plot_net_capital_gains_percentage, message = FALSE}
+# Plot the percentages by net capital gain
+data_net_capital_gains %>% 
+  filter(net_capital_gain <= 50000) %>%
+  ggplot(aes(net_capital_gain, percentage)) + 
+  geom_bar(stat = "identity") + 
+  geom_point() + 
+  ggtitle("Percentage of Adults That Made Over $50,000 by Net Capital Gains") +  
+  xlab("Net Capital Gain") + 
+  ylab("Percentage")
+```
+
+
+## Exploring the Dataset - Hours Per Week
+Intuitively, the more hours one works each week, the more money one makes. Below is the percentage of people who made over \$50,000 by the number of hours per week:
+```{r plot_hours_per_week_percentage, message = FALSE}
+# Plot the percentage of people who made over $50k by weekly hours
+data %>% 
+  group_by(hours.per.week) %>% 
+  summarize(percentage = mean(income == ">50K") * 100) %>% 
+  ggplot(aes(hours.per.week, percentage)) + 
+  geom_bar(stat = "identity") + 
+  ggtitle("Percentage of Adults That Made Over $50,000 by Weekly Hours") +  
+  xlab("Hours Per Week") + 
+  ylab("Percentage") + 
+  scale_x_continuous(labels = seq(0, 100, 10), breaks = seq(0, 100, 10))
+```
+
+As expected, we see that those who work more hours were more likely to have made more than \$50,000 and vice versa.
+
+
+## Exploring the Dataset - Native Country
+Here are the totals and percentages by country of origin:
+```{r show_native_country_count_percentage}
+# Show total and percentages by native country
+data_native_countries <- data %>% 
+  group_by(native.country) %>% 
+  summarize(total = n(), percentage = mean(income == ">50K") * 100) %>% 
+  arrange(desc(total))
+
+data_native_countries %>% print(n = Inf)
+```
+
+As expected, most people in the dataset were born in the US. However, we can see that people from particular countries were more likely to make over \$50,000. For example, Germany, Canada, and Cuba. A plot of the percentages for each country is shown below:
+```{r plot_native_country_percentage, message = FALSE}
+# Plot the percentages by country
+data_native_countries %>% 
+  mutate(native.country = reorder(native.country, percentage)) %>% 
+  ggplot(aes(native.country, percentage)) + 
+  geom_bar(stat = "identity") + 
+  ggtitle("Percentage of Adults That Made Over $50,000 by Native Country") +  
+  xlab("Country") + 
+  ylab("Percentage") + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
+  gghighlight(native.country == "United-States")
+```
+
+We can see that those born in the US were not the most likely to make more than \$50,000. Out of the countries listed in the dataset, the US sits somewhere in the middle. The countries with the highest percentages were Iran, France, and India.
+
+We also observe that some countries are listed as having a 0% probabaility of making over \$50,000. This is not representative of immigrants of those countries collectively, as the data doesn't have a large prevalence of people from those countries.
+```{r show_native_countries_count_bottom_10}
+# Show the native countries with the least amount of adults in the dataset
+data_native_countries %>% 
+  arrange(total) %>% 
+  head(10)
+```
+
+Only 1 person from the Netherlands was in the dataset and that person didn't make over \$50,000. We also see that people from countries such as Cambodia and Yugoslavia had a small prevlance as well, but in particular, they had a higher percentage.
+
+Let's try analyzing this column based on whether the person was born in the US or not. Here are the totals and percentages for both groups:
+```{r show_US_born_count_percentage}
+# Show the totals and percentages based on whether the adult is born in the US
+data_us_born <- data %>% 
+  mutate(
+    is_US_born = factor(
+      ifelse(native.country == "United-States", "Born in the US", "Not Born in the US")
+    )
+  ) %>% 
+  group_by(is_US_born) %>% 
+  summarize(total = n(), percentage = mean(income == ">50K") * 100)
+data_us_born
+```
+
+The dataset suggests that nearly 10% of people in the US were born in another country. We also see that US citizens had a higher probability of making over \$50,000, but by nearly 5% more.
+
+A visualization of percentages from the table above is shown below:
+```{r plot_US_born_percentage, message = FALSE}
+# Plot the percentages based on whether the adult is born in the US
+data_us_born %>% 
+  ggplot(aes(is_US_born, percentage, fill = is_US_born)) + 
+  geom_bar(stat = "identity") + 
+  ggtitle("Percentage of Adults That Made Over $50,000 by Native Status") +  
+  xlab("Country") + 
+  ylab("Percentage") + 
+  labs(fill = "Native Status")
+```
+
+
+## Exploring the Dataset - Final Weight
+The dataset also provided a column called `fnlwgt`, or final weight. According to Ronny Kohavi and Barry Becker (see <https://www.kaggle.com/uciml/adult-census-income/data>), people from similar demographics should have similar final weight values. Due to the complexity of this calculation, we will just compare the distrubtion of final weights of those who made over \$50,000 to the distribtuion of final weights of those that didn't.
+
+```{r show_final_weight_distribution}
+# Calculate the mean, standard error, and total number of the final weights by income
+data_final_weights <- data %>% 
+  group_by(income) %>% 
+  summarize(total = n(), 
+            proportion = n()/nrow(data), 
+            avg = mean(fnlwgt), 
+            se = sd(fnlwgt)/sqrt(n()), 
+            conf_low = avg - 2 * se, 
+            conf_high = avg + 2 * se)
+
+data_final_weights
+```
+
+A visualization of the distributions above is shown below:
+```{r plot_final_weight_distribution, message = FALSE}
+# Plot the mean and confidence intervals of the final weights by income
+data_final_weights %>% 
+  ggplot(aes(income, avg, ymin = avg - 2 * se, ymax = avg + 2 * se)) + 
+  geom_point() +
+  geom_errorbar() + 
+  ggtitle("Disribution of Final Weights By Income Classification") +  
+  xlab("Income") + 
+  ylab("Final Weight")
+```
+
+While there is some overlap, we can see that the averages are outside each other's confidence intervals.
+
+
+# Models
+In this section, we try to use the features to generate models that can accurately predict the user's income classification. We will use the logistic regression, QDA, local regression, classification tree, random forest, k-means clustering, and ensemble models in an effort to predict the incomes.
+
+
+## Models - Preparing the Dataset
+Before continuing, let's convert the columns into numerical values. This will be necessary for one of the models. Since the columns that are not numbers are already factors, the conversion should be simple. We will also add a net capital gains columns and remove columns that are redundant, such as education number, capital gains, and capital losses.
+```{r process_dataset, message = FALSE}
+# Convert the columns to numerical values instead of factors.
+# Then remove the columns that won't be used for the models
+data <- data %>% 
+  mutate(workclass = as.numeric(workclass), 
+         fnlwgt = as.numeric(fnlwgt), 
+         education = as.numeric(education), 
+         marital.status = as.numeric(marital.status),  
+         occupation = as.numeric(occupation), 
+         relationship = as.numeric(relationship), 
+         race = as.numeric(race), 
+         sex = as.numeric(sex), 
+         net_capital_gain = as.numeric(capital.gain - capital.loss), 
+         hours.per.week = as.numeric(hours.per.week), 
+         native.country = as.numeric((native.country))
+  ) %>% 
+  select(-c(education.num, capital.gain, capital.loss))
+```
+
+
+## Models - Training & Test Sets
+For this project, we will split the dataset into a training set, which will consist of 80% of the rows, and a test set, which consists of the remaining 20%. This should provide enough test cases to determine accuracy while providing enough training data for the models.
+```{r generate_train_and_test_sets, message = FALSE, warning = FALSE}
+# Split the data into a training set (80%) and a test set (20%)
+set.seed(1, sample.kind = "Rounding")
+test_index <- createDataPartition(data$income, times = 1, p = 0.2, list = FALSE)
+train_set <- data[-test_index,]
+test_set <- data[test_index,]
+rm(test_index)
+```
+
+The proportion of incomes less than or equal to \$50,000 in the training set and test set is `r mean(train_set$income == "<=50K")` and `r mean(test_set$income == "<=50K")` respectively. Both sets have about the same proportion of income types.
+
+For our baseline model, we will assume that everyone made under \$50,000. While we would achieve an accuracy of `r mean(test_set$income == "<=50K") * 100`%, we would have specificity of 0%. In other words, everyone who made over \$50,000 would be incorrectly predicted to have made \$50,000 or less.
+
+
+## Models - Logistic Regression
+The first model used was the logistic regression model, which is an improvement over the baseline model. However, it can be improved much more. The following code generates the model, makes the predictions, and displays the results.
+```{r glm, message = FALSE, warning = FALSE}
+# Train the model
+set.seed(1, sample.kind = "Rounding")
+train_glm <- train(income ~ ., 
+                   method = "glm", 
+                   data = train_set)
+
+# Make the predictions
+y_hat_glm <- predict(train_glm, test_set)
+
+# Determine accuracy of the model
+results_glm <- confusionMatrix(data = y_hat_glm, reference = test_set$income)
+results_glm
+```
+
+
+## Models - Quadratic Discriminant Analysis (QDA)
+After the logistic model, we then tried using a quadratic discriminant analysis, or QDA, to predict the incomes. We also make small improvements here as well. The following code generates the model, makes the predictions, and displays the results.
+```{r qda, message = FALSE, warning = FALSE}
+# Train the model
+set.seed(1, sample.kind = "Rounding")
+train_qda <- train(income ~ ., 
+                   method = "qda", 
+                   data = train_set)
+
+# Make the predictions
+y_hat_qda <- predict(train_qda, test_set)
+
+# Determine accuracy of the model
+results_qda <- confusionMatrix(data = y_hat_qda, reference = test_set$income)
+results_qda
+```
+
+
+## Models - Local Regression (Loess)
+Using local regression, we managed to achieve 80% accuracy. Once again, this model improves the accuracy, but only slightly. The following code generates the model, makes the predictions, and displays the results.
+```{r loess, message = FALSE, warning = FALSE}
+# Train the model
+set.seed(1, sample.kind = "Rounding")
+train_loess <- train(income ~ ., 
+                     method = "gamLoess", 
+                     data = train_set)
+
+# Make the predictions
+y_hat_loess <- predict(train_loess, test_set)
+
+# Determine accuracy of the model
+results_loess <- confusionMatrix(data = y_hat_loess, reference = test_set$income)
+results_loess
+```
+
+## Models - Classification Tree
+The classification tree significantly improved the accuracy by nearly 5%. The following code generates the model, makes the predictions, and displays the results.
+```{r ct, message = FALSE, warning = FALSE}
+# Train the model
+set.seed(1, sample.kind = "Rounding")
+train_ct <- train(income ~ ., 
+                  method = "rpart", 
+                  data = train_set, 
+                  tuneGrid = data.frame(cp = seq(0, 0.01, 0.001)))
+
+# Make the predictions
+y_hat_ct <- predict(train_ct, test_set)
+
+# Determine accuracy of the model
+results_ct <- confusionMatrix(data = y_hat_ct, reference = test_set$income)
+results_ct
+```
+
+We can identify the optimal parameter value used and compare the accuracy obtained from that value to accuracies from other parameter values.
+```{r ct_tunes}
+# Plot the model's accuracy for each complexity parameter
+plot(train_ct, main = "Classification Tree Results")
+
+# Show the most optimal paramater value
+train_ct$bestTune
+
+```
+We see that the best complexity paramater value is `r train_ct$bestTune`.
+
+
+## Models - Random Forest
+After seeing the results of the classification tree, it was worth trying the random forest model to see if the accuracy improves even more. Using 200 trees, we see a slight improvement, however the model is close to an accuracy of 86%. The following code generates the model, makes the predictions, and displays the results.
+```{r rf, message = FALSE, warning = FALSE}
+# Train the model
+# NOTE: This will take roughly 40 minutes to complete
+set.seed(1, sample.kind = "Rounding")
+train_rf <- train(income ~ ., 
+                  method = "rf", 
+                  data = train_set, 
+                  ntree = 200,
+                  tuneGrid = data.frame(mtry = 1:5), 
+                  importance = TRUE)
+
+# Make the predictions
+y_hat_rf <- predict(train_rf, test_set)
+
+# Determine accuracy of the model
+results_rf <- confusionMatrix(data = y_hat_rf, reference = test_set$income)
+results_rf
+```
+
+Here are the most important variables for this model. We can see that `net_capital_gain` is listed as the most important variable in the model, followed by education, occupation, age, hours per week, and marital status.
+```{r rf_varimp}
+# Show the most important variables in the model
+varImp(train_rf)
+```
+
+We can see how the model performs across different number of predictors. In this model, we chose to use 1 through 5.
+```{r rf_tunes}
+# Plot the model and the accuracies for each predictor
+plot(train_rf, 
+     main = "Random Forest Results", 
+     xlab = "# of Randomly Selected Predictors"
+)
+
+# Show the most optimal paramater value
+train_rf$bestTune
+```
+We see that the most optimal number of predictors for this model is `r train_rf$bestTune`.
+
+
+## Models - K-Means Clustering
+The k-means clustering model is the only unsupervised model used in this project. Unlike the previous models, this model fails to perform at least as well as the baseline model. The following code generates the model, makes the predictions, and displays the results.
+```{r kmeans, message = FALSE, warning = FALSE}
+# Train the model
+set.seed(1, sample.kind = "Rounding")
+train_kmeans <- kmeans(select(train_set, -income), centers = 3)
+
+# Prediction function for the k-means clustering model
+# Assigns each row to a cluster from k_means
+predict_kmeans <- function(predictors, k_means) {
+  # Get cluster centers
+  centers <- k_means$centers
+  
+  # Calculate the distance from the cluster centers
+  distances <- sapply(1:nrow(predictors), function(i) {
+    apply(centers, 1, function(y) dist(rbind(predictors[i,], y)))
+  })
+  
+  # Select the cluster that is closest to the center
+  max.col(-t(distances))
+}
+
+# Make the predictions
+y_hat_kmeans <- factor(ifelse(predict_kmeans(select(test_set, -income), train_kmeans) == 2, ">50K", "<=50K"))
+
+# Determine accuracy of the model
+results_kmeans <- confusionMatrix(data = y_hat_kmeans, reference = test_set$income)
+results_kmeans
+```
+
+
+## Models - Ensemble
+Using the previous models (except for the k-means clustering model), we use the predictions generated from each of the models to predict the incomes. It managed to achieve an accuracy of almost 84%. The following code generates the model, makes the predictions, and displays the results.
+```{r ensemble}
+# Create the ensemble
+ensemble <- data.frame(glm = y_hat_glm,
+                       qda = y_hat_qda,
+                       loess = y_hat_loess,
+                       ct = y_hat_ct,
+                       kmeans = y_hat_rf)
+
+# Make the predictions
+y_hat_ensemble <- factor(ifelse(rowMeans(ensemble == ">50K") > 0.5, ">50K", "<=50K"))
+
+# Determine accuracy of the model
+results_ensemble <- confusionMatrix(data = y_hat_ensemble, reference = test_set$income)
+results_ensemble
+```
+
+
+# Results
+We can condense the results of all the models into a table, where we can compare the models.
+```{r results}
+# Save the model names
+models = c(
+  "Logistic Regression", 
+  "QDA", 
+  "Loess", 
+  "Classification Tree", 
+  "Random Forest", 
+  "K-Means Clustering", 
+  "Ensemble"
+)
+
+# Save the model accuracies
+accuracies = c( 
+  mean(test_set$income == y_hat_glm), 
+  mean(test_set$income == y_hat_qda), 
+  mean(test_set$income == y_hat_loess), 
+  mean(test_set$income == y_hat_ct), 
+  mean(test_set$income == y_hat_rf), 
+  mean(test_set$income == y_hat_kmeans), 
+  mean(test_set$income == y_hat_ensemble)
+)
+
+# Save the model sensitivities
+sensitivities = c(
+  sensitivity(data = y_hat_glm, reference = test_set$income), 
+  sensitivity(data = y_hat_qda, reference = test_set$income), 
+  sensitivity(data = y_hat_loess, reference = test_set$income), 
+  sensitivity(data = y_hat_ct, reference = test_set$income), 
+  sensitivity(data = y_hat_rf, reference = test_set$income), 
+  sensitivity(data = y_hat_kmeans, reference = test_set$income), 
+  sensitivity(data = y_hat_ensemble, reference = test_set$income)
+) 
+
+# Save the model specificities
+specificities = c(
+  specificity(data = y_hat_glm, reference = test_set$income), 
+  specificity(data = y_hat_qda, reference = test_set$income), 
+  specificity(data = y_hat_loess, reference = test_set$income), 
+  specificity(data = y_hat_ct, reference = test_set$income), 
+  specificity(data = y_hat_rf, reference = test_set$income), 
+  specificity(data = y_hat_kmeans, reference = test_set$income), 
+  specificity(data = y_hat_ensemble, reference = test_set$income)
+) 
+
+# Save the model precision
+precisions = c(
+  precision(data = y_hat_glm, reference = test_set$income), 
+  precision(data = y_hat_qda, reference = test_set$income), 
+  precision(data = y_hat_loess, reference = test_set$income), 
+  precision(data = y_hat_ct, reference = test_set$income), 
+  precision(data = y_hat_rf, reference = test_set$income), 
+  precision(data = y_hat_kmeans, reference = test_set$income), 
+  precision(data = y_hat_ensemble, reference = test_set$income)
+) 
+
+# Save the model F1 scores
+F1s = c(
+  F_meas(data = y_hat_glm, reference = test_set$income), 
+  F_meas(data = y_hat_qda, reference = test_set$income), 
+  F_meas(data = y_hat_loess, reference = test_set$income), 
+  F_meas(data = y_hat_ct, reference = test_set$income), 
+  F_meas(data = y_hat_rf, reference = test_set$income), 
+  F_meas(data = y_hat_kmeans, reference = test_set$income), 
+  F_meas(data = y_hat_ensemble, reference = test_set$income)
+) 
+
+# Combine the results into a data frame, then display them
+results <- data.frame(
+  Model = models, 
+  Accuracy = accuracies, 
+  Sensitivity = sensitivities, 
+  Specificity = specificities, 
+  Precision = precisions, 
+  F1 = F1s
+  )
+
+results
+```
+We can see that the **random forest** model had the highest accuracy, specificity, precision, and F1 score. The accuracy of the model was **85.98%**. It didn't have the highest sensitivity, although the differences are comparatively small across most models. The QDA model had the highest sensitivity, but it had one of lowest specificities. We can also see that the k-means clustering model performed poorly overall.
+
+The following graph shows the accuracies of all the models and how they compare to the baseline model (`r mean(test_set$income == "<=50K")`).
+```{r plot_accuracies}
+# Plot the accuracies of each model
+results %>% 
+  mutate(Model = reorder(Model, Accuracy)) %>%
+  ggplot(aes(Model, Accuracy)) + 
+  geom_bar(stat = "identity") + 
+  ggtitle("Model Results vs. Baseline Model (Green Line)") + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
+  geom_hline(yintercept = mean(test_set$income == "<=50K"), color = "green")
+```
+
+The most variability observed from the results is from specificity. The range of values extend from about 25% to about 58%, a 33% difference! The graph below visualizes the specificities for all the models.
+```{r plot_specificities}
+results %>% 
+  mutate(Model = reorder(Model, Specificity)) %>%
+  ggplot(aes(Model, Specificity)) + 
+  geom_bar(stat = "identity") + 
+  ggtitle("Specificity of the Models") + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+
+# Conclusion
+It was discovered that people who were about 50 years old had the highest probability of making over \$50,000 than the other age groups. It also seems that people who had government jobs or were self-employed incorporated had a better chance of making more money than those in the private sector. Surprisingly, the dataset suggests that men had a higher probability of making over \$50,000 than women, although the reason behind this is unclear. It is also noted that those of Asian/Pacific Island descent had the highest probability despite having a small prevalance. Another surprising observation was that US citizens didn't have the highest probability. The top 3 probabilities by ethnic groups were Iranian, French, and Indian.
+
+When predicting the incomes, the random forest model performed the best overall. It determined that net capital gain was the most important variable when predicting incomes. Education, occupation, age, hours per week, and marital status were also among one of the most important variables as well. Immutable characteristics such as race and sex were not considered to be as important, according to the model.
+
+The findings indicate that personal choices are one of the biggest determinants of income. Those that pursued a higher education, were married, worked more hours, worked in higher-paying occupations, and invested in capital were more likely to earn over \$50,000 in 1994. 
+
+An important note to consider is that the data is over 25 years old. However, it is likely that these observations can still be utilized and applied today. For instance, investing, pursuing a higher education and working more hours all can improve one's chances of making more than \$50,000.
