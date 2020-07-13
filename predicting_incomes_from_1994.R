@@ -2,7 +2,7 @@
 # Predicting 1994 Incomes
 # June 8, 2020
 
-# NOTE: It will take about 45 minutes to run all the code.
+# NOTE: It will take about 1 hour to run all the code.
 
 
 # LOADING THE DATA
@@ -12,14 +12,15 @@
 if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
 if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
 if(!require(gghighlight)) install.packages("gghighlight", repos = "http://cran.us.r-project.org")
-if(!require(gam)) install.packages("gam", repos = "http://cran.us.r-project.org")
+if(!require(gbm)) install.packages("gbm", repos = "http://cran.us.r-project.org")
+if(!require(mda)) install.packages("mda", repos = "http://cran.us.r-project.org")
+if(!require(earth)) install.packages("earth", repos = "http://cran.us.r-project.org")
 if(!require(tinytex)) install.packages("tinytex", repos = "http://cran.us.r-project.org")
-
 
 # Create a temporary file and load the dataset into it
 # NOTE: The CSV is already on this project's GitHub repo.
 # Original Source: https://www.kaggle.com/uciml/adult-census-income/data
-datafile = tempfile()
+datafile <- tempfile()
 download.file("https://raw.github.com/farnswj1/Predicting_Incomes_From_1994/master/adult.csv", datafile)
 
 # Read the data from the file
@@ -97,6 +98,7 @@ data_work_classes <- data %>%
   group_by(workclass) %>% 
   summarize(total = n(), percentage = mean(income == ">50K") * 100) %>% 
   arrange(desc(percentage))
+
 data_work_classes
 
 # Plot the total number of people from each work class
@@ -131,6 +133,7 @@ data_education <- data %>%
   summarize(total = n(), percentage = mean(income == ">50K") * 100) %>% 
   arrange(desc(education.num)) %>% 
   ungroup()
+
 data_education
 
 # Plot the number of people for each level of education
@@ -182,6 +185,7 @@ data_occupations <- data %>%
   group_by(occupation) %>% 
   summarize(total = n(), percentage = mean(income == ">50K") * 100) %>% 
   arrange(desc(percentage))
+
 data_occupations
 
 # Plot the percentage of people what made over $50k by level of education
@@ -204,6 +208,7 @@ data_races <- data %>%
   group_by(race) %>% 
   summarize(total = n(), percentage = mean(income == ">50K") * 100) %>% 
   arrange(desc(percentage))
+
 data_races
 
 # Show the totals and percentages for males and females
@@ -211,6 +216,7 @@ data_sexes <- data %>%
   group_by(sex) %>% 
   summarize(total = n(), percentage = mean(income == ">50K") * 100) %>% 
   arrange(desc(percentage))
+
 data_sexes
 
 # Show the totals and percentages by race and sex together
@@ -219,6 +225,7 @@ data_races_and_sexes <- data %>%
   summarize(total = n(), percentage = mean(income == ">50K") * 100) %>% 
   arrange(desc(percentage)) %>% 
   ungroup()
+
 data_races_and_sexes
 
 # Plot the percentages by race and sex
@@ -241,6 +248,7 @@ data_net_capital_gains <- data %>%
   group_by(net_capital_gain) %>% 
   summarize(total = n(), percentage = mean(income == ">50K") * 100) %>% 
   arrange(desc(net_capital_gain))
+
 data_net_capital_gains  %>% print(n = Inf)
 
 # Plot the percentages by net capital gain
@@ -277,6 +285,7 @@ data_native_countries <- data %>%
   group_by(native.country) %>% 
   summarize(total = n(), percentage = mean(income == ">50K") * 100) %>% 
   arrange(desc(total))
+
 data_native_countries %>% print(n = Inf)
 
 # Plot the percentages by country
@@ -304,6 +313,7 @@ data_us_born <- data %>%
   ) %>% 
   group_by(is_US_born) %>% 
   summarize(total = n(), percentage = mean(income == ">50K") * 100)
+
 data_us_born
 
 # Plot the percentages based on whether the adult is born in the US
@@ -328,6 +338,7 @@ data_final_weights <- data %>%
             se = sd(fnlwgt)/sqrt(n()), 
             conf_low = avg - 2 * se, 
             conf_high = avg + 2 * se)
+
 data_final_weights
 
 # Plot the mean and confidence intervals of the final weights by income
@@ -343,21 +354,10 @@ data_final_weights %>%
 # MODELS - PREPARING THE DATASET
 ####################################################################################################
 
-# Convert the columns to numerical values instead of factors.
+# Generate the net capital gains column.
 # Then remove the columns that won't be used for the models
 data <- data %>% 
-  mutate(workclass = as.numeric(workclass), 
-         fnlwgt = as.numeric(fnlwgt), 
-         education = as.numeric(education), 
-         marital.status = as.numeric(marital.status),  
-         occupation = as.numeric(occupation), 
-         relationship = as.numeric(relationship), 
-         race = as.numeric(race), 
-         sex = as.numeric(sex), 
-         net_capital_gain = as.numeric(capital.gain - capital.loss), 
-         hours.per.week = as.numeric(hours.per.week), 
-         native.country = as.numeric((native.country))
-  ) %>% 
+  mutate(net_capital_gain = as.numeric(capital.gain - capital.loss)) %>% 
   select(-c(education.num, capital.gain, capital.loss))
   
   
@@ -395,38 +395,45 @@ results_glm <- confusionMatrix(data = y_hat_glm, reference = test_set$income)
 results_glm
 
 
-# MODELS - QUADRATIC DISCRIMINANT ANALSIS (QDA)
+# MODELS - STOCHASTIC GRADIENT BOOSTING
 ####################################################################################################
 
 # Train the model
 set.seed(1, sample.kind = "Rounding")
-train_qda <- train(income ~ ., 
-                   method = "qda", 
+train_gbm <- train(income ~ ., 
+                   method = "gbm", 
                    data = train_set)
 
 # Make the predictions
-y_hat_qda <- predict(train_qda, test_set)
+y_hat_gbm <- predict(train_gbm, test_set)
 
 # Determine accuracy of the model
-results_qda <- confusionMatrix(data = y_hat_qda, reference = test_set$income)
-results_qda
+results_gbm <- confusionMatrix(data = y_hat_gbm, reference = test_set$income)
+results_gbm
 
 
-# MODELS - LOCAL REGRESSION (LOESS)
+# MODELS - FLEXIBLE DISCRIMINANT ANALYSIS
 ####################################################################################################
 
 # Train the model
 set.seed(1, sample.kind = "Rounding")
-train_loess <- train(income ~ ., 
-                     method = "gamLoess", 
-                     data = train_set)
+train_fda <- train(income ~ ., 
+                   method = "fda", 
+                   data = train_set, 
+                   tuneGrid = data.frame(degree = 1, nprune = seq(21, 30, 2)))
 
 # Make the predictions
-y_hat_loess <- predict(train_loess, test_set)
+y_hat_fda <- predict(train_fda, test_set)
 
 # Determine accuracy of the model
-results_loess <- confusionMatrix(data = y_hat_loess, reference = test_set$income)
-results_loess
+results_fda <- confusionMatrix(data = y_hat_fda, reference = test_set$income)
+results_fda
+
+# Plot the model's accuracy for each complexity parameter
+plot(train_fda, main = "Flexible Discriminant Analysis Results", xlab = "Number of Terms")
+
+# Show the most optimal paramater value
+train_fda$bestTune
 
 
 # MODELS - CLASSIFICATION TREE
@@ -452,18 +459,21 @@ plot(train_ct, main = "Classification Tree Results")
 # Show the most optimal paramater value
 train_ct$bestTune
 
+# Show the most important variables in the model
+varImp(train_ct)
+
 
 # MODELS - RANDOM FOREST
 ####################################################################################################
 
 # Train the model
-# NOTE: This will take roughly 40 minutes to complete
+# NOTE: This will take roughly 45 minutes to complete
 set.seed(1, sample.kind = "Rounding")
 train_rf <- train(income ~ ., 
                   method = "rf", 
                   data = train_set, 
-                  ntree = 200,
-                  tuneGrid = data.frame(mtry = 1:5), 
+                  ntree = 100, 
+                  tuneGrid = data.frame(mtry = 10), 
                   importance = TRUE)
 
 # Make the predictions
@@ -476,55 +486,16 @@ results_rf
 # Show the most important variables in the model
 varImp(train_rf)
 
-# Plot the model and the accuracies for each predictor
-plot(train_rf, 
-     main = "Random Forest Results", 
-     xlab = "# of Randomly Selected Predictors"
-)
-
-# Show the most optimal paramater value
-train_rf$bestTune
-
- 
-# MODELS - K-MEANS CLUSTERING
-####################################################################################################
-
-# Train the model
-set.seed(1, sample.kind = "Rounding")
-train_kmeans <- kmeans(select(train_set, -income), centers = 3)
-
-# Prediction function for the k-means clustering model
-# Assigns each row to a cluster from k_means
-predict_kmeans <- function(predictors, k_means) {
-  # Get cluster centers
-  centers <- k_means$centers
-  
-  # Calculate the distance from the cluster centers
-  distances <- sapply(1:nrow(predictors), function(i) {
-    apply(centers, 1, function(y) dist(rbind(predictors[i,], y)))
-  })
-  
-  # Select the cluster that is closest to the center
-  max.col(-t(distances))
-}
-
-# Make the predictions
-y_hat_kmeans <- factor(ifelse(predict_kmeans(select(test_set, -income), train_kmeans) == 2, ">50K", "<=50K"))
-
-# Determine accuracy of the model
-results_kmeans <- confusionMatrix(data = y_hat_kmeans, reference = test_set$income)
-results_kmeans
-
 
 # MODELS - ENSEMBLE
 ####################################################################################################
 
 # Create the ensemble
 ensemble <- data.frame(glm = y_hat_glm,
-                       qda = y_hat_qda,
-                       loess = y_hat_loess,
+                       gbm = y_hat_gbm,
+                       fda = y_hat_fda,
                        ct = y_hat_ct,
-                       kmeans = y_hat_rf)
+                       rf = y_hat_rf)
 
 # Make the predictions
 y_hat_ensemble <- factor(ifelse(rowMeans(ensemble == ">50K") > 0.5, ">50K", "<=50K"))
@@ -538,68 +509,62 @@ results_ensemble
 ####################################################################################################
 
 # Save the model names
-models = c(
+models <- c(
   "Logistic Regression", 
-  "QDA", 
-  "Loess", 
+  "GBM", 
+  "FDA", 
   "Classification Tree", 
   "Random Forest", 
-  "K-Means Clustering", 
   "Ensemble"
 )
 
 # Save the model accuracies
-accuracies = c( 
+accuracies <- c( 
   mean(test_set$income == y_hat_glm), 
-  mean(test_set$income == y_hat_qda), 
-  mean(test_set$income == y_hat_loess), 
+  mean(test_set$income == y_hat_gbm), 
+  mean(test_set$income == y_hat_fda), 
   mean(test_set$income == y_hat_ct), 
   mean(test_set$income == y_hat_rf), 
-  mean(test_set$income == y_hat_kmeans), 
   mean(test_set$income == y_hat_ensemble)
 )
 
 # Save the model sensitivities
-sensitivities = c(
+sensitivities <- c(
   sensitivity(data = y_hat_glm, reference = test_set$income), 
-  sensitivity(data = y_hat_qda, reference = test_set$income), 
-  sensitivity(data = y_hat_loess, reference = test_set$income), 
+  sensitivity(data = y_hat_gbm, reference = test_set$income), 
+  sensitivity(data = y_hat_fda, reference = test_set$income), 
   sensitivity(data = y_hat_ct, reference = test_set$income), 
   sensitivity(data = y_hat_rf, reference = test_set$income), 
-  sensitivity(data = y_hat_kmeans, reference = test_set$income), 
   sensitivity(data = y_hat_ensemble, reference = test_set$income)
 ) 
 
 # Save the model specificities
-specificities = c(
+specificities <- c(
   specificity(data = y_hat_glm, reference = test_set$income), 
-  specificity(data = y_hat_qda, reference = test_set$income), 
-  specificity(data = y_hat_loess, reference = test_set$income), 
+  specificity(data = y_hat_gbm, reference = test_set$income), 
+  specificity(data = y_hat_fda, reference = test_set$income), 
   specificity(data = y_hat_ct, reference = test_set$income), 
   specificity(data = y_hat_rf, reference = test_set$income), 
-  specificity(data = y_hat_kmeans, reference = test_set$income), 
   specificity(data = y_hat_ensemble, reference = test_set$income)
 ) 
 
 # Save the model precision
-precisions = c(
+precisions <- c(
   precision(data = y_hat_glm, reference = test_set$income), 
-  precision(data = y_hat_qda, reference = test_set$income), 
-  precision(data = y_hat_loess, reference = test_set$income), 
+  precision(data = y_hat_gbm, reference = test_set$income), 
+  precision(data = y_hat_fda, reference = test_set$income), 
   precision(data = y_hat_ct, reference = test_set$income), 
   precision(data = y_hat_rf, reference = test_set$income), 
-  precision(data = y_hat_kmeans, reference = test_set$income), 
   precision(data = y_hat_ensemble, reference = test_set$income)
 ) 
 
 # Save the model F1 scores
-F1s = c(
+F1s <- c(
   F_meas(data = y_hat_glm, reference = test_set$income), 
-  F_meas(data = y_hat_qda, reference = test_set$income), 
-  F_meas(data = y_hat_loess, reference = test_set$income), 
+  F_meas(data = y_hat_gbm, reference = test_set$income), 
+  F_meas(data = y_hat_fda, reference = test_set$income), 
   F_meas(data = y_hat_ct, reference = test_set$income), 
   F_meas(data = y_hat_rf, reference = test_set$income), 
-  F_meas(data = y_hat_kmeans, reference = test_set$income), 
   F_meas(data = y_hat_ensemble, reference = test_set$income)
 ) 
 
@@ -611,7 +576,8 @@ results <- data.frame(
   Specificity = specificities, 
   Precision = precisions, 
   F1 = F1s
-  )
+)
+
 results
 
 # Plot the accuracies of each model
@@ -621,7 +587,8 @@ results %>%
   geom_bar(stat = "identity") + 
   ggtitle("Model Results vs. Baseline Model (Green Line)") + 
   theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
-  geom_hline(yintercept = mean(test_set$income == "<=50K"), color = "green")
+  geom_hline(yintercept = mean(test_set$income == "<=50K"), color = "green") + 
+  scale_y_continuous(labels = seq(0, 1, 0.1), breaks = seq(0, 1, 0.1))
 
 # Plot the specificities of each model
 results %>% 
@@ -629,4 +596,5 @@ results %>%
   ggplot(aes(Model, Specificity)) + 
   geom_bar(stat = "identity") + 
   ggtitle("Specificity of the Models") + 
-  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
+  scale_y_continuous(labels = seq(0, 1, 0.1), breaks = seq(0, 1, 0.1))
